@@ -764,6 +764,72 @@
         justify-content: flex-end
     }
 
+    .ex-chart {
+        display: flex;
+        align-items: flex-end;
+        gap: 4px;
+        height: 150px;
+        padding: 12px 8px 4px;
+        background: var(--pink-100);
+        border-radius: 16px;
+        margin: 10px 0 4px;
+        overflow-x: auto
+    }
+
+    .ex-bar-wrap {
+        flex: 1;
+        min-width: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        height: 100%
+    }
+
+    .ex-bar {
+        width: 62%;
+        max-width: 22px;
+        background: linear-gradient(180deg, var(--pink-400), var(--pink-600));
+        border-radius: 6px 6px 0 0;
+        transition: height .3s;
+        min-height: 2px
+    }
+
+    .ex-bar-lbl {
+        font-size: 10px;
+        color: var(--plum-soft);
+        margin-top: 3px;
+        height: 12px;
+        line-height: 12px
+    }
+
+    .ex-bar-date {
+        font-size: 9px;
+        color: var(--plum-soft);
+        margin-top: 2px;
+        white-space: nowrap
+    }
+
+    .ex-date-group {
+        list-style: none;
+        margin: 8px 0;
+        background: #fff;
+        border-radius: 14px;
+        padding: 8px 12px;
+        box-shadow: 0 2px 8px rgba(255, 140, 170, .12)
+    }
+
+    .ex-date-hd {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--plum);
+        margin-bottom: 4px
+    }
+
+    .sub-item {
+        padding: 4px 0
+    }
+
     .emotion-hint {
         font-family: 'PingFang SC', sans-serif;
         font-size: 13px;
@@ -1316,6 +1382,8 @@
                 mediaIdeas: [],
                 emotionEntries: [],
                 koreanHW: [],
+                koreanClassLog: [],
+                exerciseLog: [],
                 parttime: [],
                 tutoring: {
                     students: []
@@ -1364,6 +1432,44 @@
                         c.stage = stageMap[c.stage];
                 });
         });
+        if (!s.lists.koreanClassLog)
+            s.lists.koreanClassLog = [];
+        if (s.daily)
+            Object.entries(s.daily).forEach(([dk, dy]) => {
+                if (dy && dy.korean && Array.isArray(dy.korean.classLog) && dy.korean.classLog.length) {
+                    dy.korean.classLog.forEach(c => {
+                        let tm = c.time || '';
+                        if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\s/.test(tm))
+                            tm = tm.replace(/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\s+/, '');
+                        s.lists.koreanClassLog.push({
+                            id: c.id || uid(),
+                            note: c.note || '',
+                            stage: c.stage || '',
+                            date: dk,
+                            time: tm,
+                            ts: Date.parse(dk + 'T00:00') || 0
+                        });
+                    });
+                    dy.korean.classLog = [];
+                }
+            });
+        if (!s.lists.exerciseLog)
+            s.lists.exerciseLog = [];
+        if (s.daily)
+            Object.entries(s.daily).forEach(([dk, dy]) => {
+                if (dy && dy.exercise && Array.isArray(dy.exercise.logs) && dy.exercise.logs.length) {
+                    dy.exercise.logs.forEach(l => {
+                        s.lists.exerciseLog.push({
+                            id: l.id || uid(),
+                            type: l.type || '运动',
+                            min: l.min || 0,
+                            date: dk,
+                            ts: Date.parse(dk + 'T00:00') || 0
+                        });
+                    });
+                    dy.exercise.logs = [];
+                }
+            });
         return s;
     }
     function load() {
@@ -1589,7 +1695,7 @@
             t: '今日单词'
         },
         {
-            n: t.exercise.logs.reduce((a, b) => a + b.min, 0) + '′',
+            n: (state.lists.exerciseLog || []).filter(x => x.date === todayKey()).reduce((a, b) => a + b.min, 0) + '′',
             t: '运动时长'
         },
         {
@@ -1613,7 +1719,7 @@
             t: '灵感数'
         },
         {
-            n: (t.korean.classes || 0) + '节',
+            n: (state.lists.koreanClassLog || []).filter(x => x.date === todayKey()).length + '节',
             t: '韩语上课'
         },
         {
@@ -1769,31 +1875,67 @@
     }
 
     function renderExercise() {
-        const t = getToday();
-        const list = t.exercise.logs.map(l => `<li class="item"><span class="txt"><b>${esc(l.type)}</b> <span class="sub">${l.min} 分钟</span></span><button class="del" onclick="exDel('${l.id}')">✕</button></li>`).join('') || `<div class="empty">动起来才会闪闪发光哦 💪</div>`;
+        const logAll = (state.lists.exerciseLog || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        const dk = todayKey();
+        const todayLogs = logAll.filter(l => l.date === dk);
+        const todayMin = todayLogs.reduce((a, b) => a + b.min, 0);
+        // 最近14天柱状图
+        const chartDays = [];
+        const now = new Date();
+        for (let i = 13; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            const ds = todayKey(d);
+            const mins = logAll.filter(l => l.date === ds).reduce((a, b) => a + b.min, 0);
+            chartDays.push({
+                ds,
+                mins
+            });
+        }
+        const maxMin = Math.max(1, ...chartDays.map(c => c.mins));
+        const bars = chartDays.map(c => `<div class="ex-bar-wrap"><div class="ex-bar" style="height:${Math.round(c.mins / maxMin * 100)}%" title="${c.ds}：${c.mins}分钟"></div><div class="ex-bar-lbl">${c.mins ? c.mins : ''}</div><div class="ex-bar-date">${c.ds.slice(5)}</div></div>`).join('');
+        // 按日期分组列表
+        const byDate = {};
+        logAll.forEach(l => {
+            (byDate[l.date] = byDate[l.date] || []).push(l);
+        });
+        const dateKeys = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+        const listHtml = dateKeys.length ? dateKeys.map(date => {
+            const items = byDate[date];
+            const sum = items.reduce((a, b) => a + b.min, 0);
+            return `<li class="ex-date-group"><div class="ex-date-hd">📅 ${date} · 共 ${sum} 分钟</div>` + items.map(l => `<div class="item sub-item"><span class="txt"><b>${esc(l.type)}</b> <span class="sub">${l.min} 分钟</span></span><button class="del" onclick="exDel('${l.id}')">✕</button></div>`).join('') + `</li>`;
+        }).join('') : `<div class="empty">动起来才会闪闪发光哦 💪</div>`;
         $('#view-exercise').innerHTML = `
    <div class="card">
-     <h2>🏃 锻炼身体 <span class="tag">每日重置 · 时长累积</span></h2>
+     <h2>🏃 锻炼身体 <span class="tag">日期记录 · 时长累积</span></h2>
      <div class="stat-row">
        <div class="stat"><span class="num">${
 
 
-        t.exercise.logs.length}</span><span class="lbl">今日次数</span></div>
-       <div class="stat"><span class="num">${t.exercise.logs.reduce((a, b) => a + b.min, 0)}'</span><span class="lbl">今日时长</span></div>
+        todayLogs.length}</span><span class="lbl">今日次数</span></div>
+       <div class="stat"><span class="num">${todayMin}'</span><span class="lbl">今日时长</span></div>
        <div class="stat"><span class="num">${state.total.exerciseMin}'</span><span class="lbl">累计时长</span></div>
      </div>
-     <div class="add-row">
+
+     <h2 style="font-size:17px;margin-top:4px">📊 最近 14 天运动时长</h2>
+     <div class="ex-chart">${
+
+
+        bars}</div>
+
+     <div class="add-row" style="margin-top:12px">
        <select id="exType"><option>跑步</option><option>爬坡</option><option>瑜伽</option><option>力量训练</option><option>骑行</option><option>游泳</option><option>跳绳</option><option>跳舞</option><option>其他</option></select>
        <input id="exMin" type="number" min="1" placeholder="时长(分钟)" style="max-width:140px">
        <button class="btn" onclick="exAdd()">＋ 记录</button>
      </div>
+     <p class="hint">📅 每笔运动都按日期记下来，下面的记录长期保存，柱状图看趋势～</p>
      <ul class="item-list">${
 
 
 
 
 
-        list}</ul>
+
+        listHtml}</ul>
      <div class="reset-zone"><button class="btn soft" onclick="resetToday('exercise')">🧹 重置今日</button></div>
    </div>`
 
@@ -1806,10 +1948,13 @@
             toast('时长要大于0哦');
             return;
         }
-        getToday().exercise.logs.push({
+        state.lists.exerciseLog = state.lists.exerciseLog || [];
+        state.lists.exerciseLog.unshift({
             id: uid(),
             type,
-            min
+            min,
+            date: todayKey(),
+            ts: Date.now()
         });
         state.total.exerciseMin += min;
         $('#exMin').value = '';
@@ -1817,7 +1962,10 @@
         renderExercise();
     }
     function exDel(id) {
-        getToday().exercise.logs = getToday().exercise.logs.filter(l => l.id !== id);
+        const l = (state.lists.exerciseLog || []).find(x => x.id === id);
+        state.lists.exerciseLog = (state.lists.exerciseLog || []).filter(x => x.id !== id);
+        if (l)
+            state.total.exerciseMin = Math.max(0, state.total.exerciseMin - l.min);
         save();
         renderExercise();
     }
@@ -2124,13 +2272,15 @@
     }
 
     function renderKorean() {
-        const t = getToday();
         const hw = state.lists.koreanHW;
         const hwDone = hw.filter(x => x.done).length;
         const stage = state.koreanStage;
+        const dk = todayKey();
+        const classLogAll = (state.lists.koreanClassLog || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+        const todayClasses = classLogAll.filter(c => c.date === dk).length;
         const stageBtns = KR_STAGES.map(s => `<button class="stage-btn ${s === stage ? 'on' : ''}" onclick="setStage('${s}')">${s.startsWith('TOPIK') ? '📄 ' : s === '发音课' ? '🔤 ' : '✨ '}${s}</button>`).join('');
         const stageProg = KR_STAGES.map(s => `<b>${s}</b>：上课 ${state.total.koreanByStage[s] || 0} 节 · 作业 ${state.total.koreanHWByStage[s] || 0} 项`).join('　｜　');
-        const classLog = t.korean.classLog.map(c => `<li class="item"><span class="txt">📖 ${esc(c.note || '韩语课')}<span class="stage-tag">${esc(c.stage || '')}</span><br><span class="sub">${c.time}</span></span><button class="del" onclick="krDelClass('${c.id}')">✕</button></li>`).join('') || `<div class="empty">还没有上课记录，去打卡第一节课吧 🇰🇷</div>`;
+        const classLog = classLogAll.length ? classLogAll.map(c => `<li class="item"><span class="txt">📖 ${esc(c.note || '韩语课')}<span class="stage-tag">${esc(c.stage || '')}</span><br><span class="sub">📅 ${esc(c.date)}${c.time ? ' · ' + esc(c.time) : ''}</span></span><button class="del" onclick="krDelClass('${c.id}')">✕</button></li>`).join('') : `<div class="empty">还没有上课记录，去打卡第一节课吧 🇰🇷</div>`;
         const hwList = hw.map(x => `<li class="item"><div class="chk ${x.done ? 'done' : ''}" onclick="krHWToggle('${x.id}')">${x.done ? '✓' : ''}</div><span class="txt ${x.done ? 'done-txt' : ''}">${esc(x.text)}<span class="stage-tag">${esc(x.stage || '')}</span></span><button class="del" onclick="krHWDel('${x.id}')">✕</button></li>`).join('') || `<div class="empty">还没有作业，加一项试试 📝</div>`;
         $('#view-korean').innerHTML = `
    <div class="card">
@@ -2139,8 +2289,8 @@
        <div class="stat"><span class="num">${
 
 
-        t.korean.classes}</span><span class="lbl">今日上课(节)</span></div>
-       <div class="stat"><span class="num">${state.total.koreanClasses}</span><span class="lbl">累计上课(节)</span></div>
+        todayClasses}</span><span class="lbl">今日上课(节)</span></div>
+       <div class="stat"><span class="num">${classLogAll.length}</span><span class="lbl">累计上课(节)</span></div>
        <div class="stat"><span class="num">${hwDone}/${hw.length}</span><span class="lbl">作业进度</span></div>
        <div class="stat"><span class="num">${state.total.koreanHW}</span><span class="lbl">累计完成作业</span></div>
      </div>
@@ -2156,7 +2306,9 @@
        <input id="krNote" placeholder="这节课内容，如 单元1 发音练习">
        <button class="btn" onclick="krClass()">✓ 上课打卡</button>
      </div>
+     <p class="hint">📅 每节课都按日期记下来，下面的记录长期保存，随时回看几号上了什么课～</p>
      <ul class="item-list">${
+
 
 
 
@@ -2182,16 +2334,19 @@
     function krClass() {
         const note = $('#krNote').value.trim();
         const stage = state.koreanStage;
+        const dk = todayKey();
         if (!(stage in state.total.koreanByStage))
             state.total.koreanByStage[stage] = 0;
-        getToday().korean.classes++;
-        getToday().korean.classLog.push({
+        state.lists.koreanClassLog = state.lists.koreanClassLog || [];
+        state.lists.koreanClassLog.unshift({
             id: uid(),
             note,
             stage,
-            time: new Date().toLocaleString('zh-CN', {
+            date: dk,
+            time: new Date().toLocaleTimeString('zh-CN', {
                 hour12: false
-            })
+            }),
+            ts: Date.now()
         });
         state.total.koreanClasses++;
         state.total.koreanByStage[stage]++;
@@ -2201,10 +2356,8 @@
         toast('上课打卡成功，认真听讲哦 📖');
     }
     function krDelClass(id) {
-        const t = getToday();
-        const c = t.korean.classLog.find(x => x.id === id);
-        t.korean.classLog = t.korean.classLog.filter(x => x.id !== id);
-        t.korean.classes = Math.max(0, t.korean.classes - 1);
+        const c = (state.lists.koreanClassLog || []).find(x => x.id === id);
+        state.lists.koreanClassLog = (state.lists.koreanClassLog || []).filter(x => x.id !== id);
         if (c) {
             state.total.koreanClasses = Math.max(0, state.total.koreanClasses - 1);
             if (c.stage in state.total.koreanByStage)
@@ -2335,13 +2488,26 @@
             cur.english = fresh.english;
         }
         if (sec === 'exercise') {
-            cur.exercise = fresh.exercise;
+            const dk = todayKey();
+            (state.lists.exerciseLog || []).forEach(l => {
+                if (l.date === dk)
+                    state.total.exerciseMin = Math.max(0, state.total.exerciseMin - l.min);
+            });
+            state.lists.exerciseLog = (state.lists.exerciseLog || []).filter(l => l.date !== dk);
         }
         if (sec === 'food') {
             cur.food = fresh.food;
         }
         if (sec === 'korean') {
-            cur.korean = fresh.korean;
+            const dk = todayKey();
+            (state.lists.koreanClassLog || []).forEach(c => {
+                if (c.date === dk) {
+                    state.total.koreanClasses = Math.max(0, state.total.koreanClasses - 1);
+                    if (c.stage in state.total.koreanByStage)
+                        state.total.koreanByStage[c.stage] = Math.max(0, state.total.koreanByStage[c.stage] - 1);
+                }
+            });
+            state.lists.koreanClassLog = (state.lists.koreanClassLog || []).filter(c => c.date !== dk);
         }
         save();
         render(sec);
