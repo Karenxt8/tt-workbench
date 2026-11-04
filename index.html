@@ -1722,8 +1722,7 @@
     function homeSummary() {
         const t = getToday();
         const mealsDone = Object.values(t.food.meals).filter(Boolean).length;
-        const wt = state.lists.workTasks,
-            done = wt.filter(x => x.done).length;
+        const wt = state.lists.workTasks;
         return [
         {
             n: t.english.words.length,
@@ -1746,8 +1745,12 @@
             t: '三餐打卡'
         },
         {
-            n: done + '/' + wt.length,
+            n: wt.length,
             t: '工作任务'
+        },
+        {
+            n: '¥' + wt.reduce((a, t) => a + (t.amount || 0), 0).toFixed(0),
+            t: '累计绩效'
         },
         {
             n: state.lists.mediaIdeas.length,
@@ -2146,39 +2149,52 @@
 
     function renderWork() {
         const tasks = state.lists.workTasks;
-        const when = x => x.date || '';
-        const sorted = tasks.slice().sort((a, b) => {
-            if (a.done !== b.done)
-                return a.done ? 1 : -1;
-            return (a.ts || 0) - (b.ts || 0);
+        const byMonth = {};
+        tasks.forEach(t => {
+            let mk = (t.date && /^\d{4}-\d{2}/.test(t.date)) ? t.date.slice(0, 7) : '未注明';
+            (byMonth[mk] = byMonth[mk] || []).push(t);
         });
-        const list = sorted.map(x => `<li class="item"><div class="chk ${x.done ? 'done' : ''}" onclick="toggleTask('${x.id}')">${x.done ? '✓' : ''}</div><span class="txt ${x.done ? 'done-txt' : ''}">${esc(x.text)}${x.date ? `<br><span class="sub">📅 ${when(x)}</span>` : ''}</span><button class="del" onclick="delTask('${x.id}')">✕</button></li>`).join('') || `<div class="empty">还没有任务，列个清单开启高效一天吧 📝</div>`;
+        const monthKeys = Object.keys(byMonth).sort((a, b) => a === '未注明' ? 1 : (b === '未注明' ? -1 : b.localeCompare(a)));
+        const curMK = todayKey().slice(0, 7);
+        const money = n => '¥' + (n || 0).toFixed(2);
+        const totalAmt = tasks.reduce((a, t) => a + (t.amount || 0), 0);
+        const curAmt = (byMonth[curMK] || []).reduce((a, t) => a + (t.amount || 0), 0);
+        const monthHtml = monthKeys.map(mk => {
+            const arr = byMonth[mk];
+            const label = mk === '未注明' ? '未注明日期' : (mk.slice(0, 4) + '年' + parseInt(mk.slice(5), 10) + '月');
+            const open = mk === curMK ? ' open' : '';
+            const msum = arr.reduce((a, t) => a + (t.amount || 0), 0);
+            return `<details class="fold"${open}><summary>📅 ${label} · ${arr.length} 条 · ${money(msum)} ▾</summary><ul class="item-list">${arr.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).map(t => `<li class="item"><span class="txt">${esc(t.text)}<br><span class="sub">📅 ${esc(t.date)} · 💰 ${money(t.amount)}</span></span><button class="del" onclick="delTask('${t.id}')">✕</button></li>`).join('')}</ul></details>`;
+        }).join('');
         $('#view-work').innerHTML = `
    <div class="card">
-     <h2>📝 工作安排 <span class="tag">累积记录</span></h2>
+     <h2>📝 工作安排 <span class="tag">按月统计</span></h2>
      <div class="stat-row">
        <div class="stat"><span class="num">${
 
 
-        tasks.length}</span><span class="lbl">总任务</span></div>
-       <div class="stat"><span class="num">${tasks.filter(x => x.done).length}</span><span class="lbl">已完成</span></div>
-       <div class="stat"><span class="num">${tasks.filter(x => !x.done).length}</span><span class="lbl">进行中</span></div>
+        tasks.length}</span><span class="lbl">总记录</span></div>
+       <div class="stat"><span class="num">${byMonth[curMK] ? byMonth[curMK].length : 0}</span><span class="lbl">本月条数</span></div>
+       <div class="stat"><span class="num">${money(curAmt)}</span><span class="lbl">本月绩效</span></div>
+       <div class="stat"><span class="num">${money(totalAmt)}</span><span class="lbl">累计绩效</span></div>
      </div>
      <div class="add-row">
-       <input id="wkText" placeholder="要做什么？（如：周报 / 客户回访）" onkeydown="if(event.key==='Enter')wkAdd()" style="flex:1 1 100%">
-       <input id="wkDate" type="date" title="截止日期（可改，用于规划每周）">
-       <button class="btn" onclick="wkAdd()">＋ 添加</button>
+       <input id="wkText" placeholder="今天做了什么工作？" onkeydown="if(event.key==='Enter')wkAdd()" style="flex:1 1 100%">
+       <input id="wkAmount" type="number" min="0" step="0.01" placeholder="绩效金额 ¥" style="flex:1 1 120px">
+       <input id="wkDate" type="date" title="工作日期（可改，用于补记/统计）">
+       <button class="btn" onclick="wkAdd()">＋ 记录</button>
      </div>
-     <p class="hint">📅 截止日期可改，按日期自动排序；每周要做的就填好对应日期添加即可～</p>
-     <ul class="item-list">${
+     <p class="hint">📅 按日期记录工作，自动按月归档；每条都能单独填绩效金额，月底自动汇总，方便算工资～</p>
+     ${
 
 
 
 
 
 
-        list}</ul>
-     <div class="reset-zone"><button class="btn soft" onclick="clearDone('work')">🧹 清除已完成</button></div>
+
+        monthHtml ? monthHtml : `<div class="empty">还没有工作记录，记一笔开始吧 📝</div>`}
+     <div class="reset-zone"><button class="btn soft" onclick="clearWorkAll()">🧹 清空全部</button></div>
    </div>`
 
         ;
@@ -2192,22 +2208,25 @@
         }
         const date = $('#wkDate').value || todayKey();
         const ts = Date.parse(date + 'T00:00');
+        const amt = parseFloat($('#wkAmount').value);
         state.lists.workTasks.push({
             id: uid(),
             text: v,
-            done: false,
             date,
-            ts: isNaN(ts) ? 0 : ts
+            ts: isNaN(ts) ? 0 : ts,
+            amount: isNaN(amt) ? 0 : amt
         });
         $('#wkText').value = '';
         save();
         renderWork();
     }
-    function toggleTask(id) {
-        const x = state.lists.workTasks.find(t => t.id === id);
-        x.done = !x.done;
-        save();
-        renderWork();
+    function clearWorkAll() {
+        if (confirm('确定清空全部工作记录吗？此操作不可恢复。')) {
+            state.lists.workTasks = [];
+            save();
+            renderWork();
+            toast('已清空 🧹');
+        }
     }
     function delTask(id) {
         state.lists.workTasks = state.lists.workTasks.filter(t => t.id !== id);
@@ -2561,12 +2580,6 @@
         toast('今日已重置，重新出发 🌸');
     }
     function clearDone(sec) {
-        if (sec === 'work') {
-            state.lists.workTasks = state.lists.workTasks.filter(t => !t.done);
-            save();
-            renderWork();
-            toast('已完成任务已清除');
-        }
         if (sec === 'parttime') {
             if (!state.lists.parttime.length) {
                 toast('本来就是空的哦');
