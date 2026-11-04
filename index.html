@@ -830,6 +830,41 @@
         padding: 4px 0
     }
 
+    .fold {
+        margin: 6px 0;
+        border-radius: 14px;
+        background: var(--pink-100);
+        padding: 4px 12px
+    }
+
+    .fold > summary {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--plum);
+        cursor: pointer;
+        padding: 6px 0;
+        list-style: none;
+        user-select: none
+    }
+
+    .fold > summary::-webkit-details-marker {
+        display: none
+    }
+
+    .fold > summary::before {
+        content: "▸  ";
+        color: var(--pink-500);
+        font-weight: 700
+    }
+
+    .fold[open] > summary::before {
+        content: "▾  "
+    }
+
+    .fold .item-list {
+        margin: 6px 0
+    }
+
     .emotion-hint {
         font-family: 'PingFang SC', sans-serif;
         font-size: 13px;
@@ -1923,6 +1958,7 @@
         bars}</div>
 
      <div class="add-row" style="margin-top:12px">
+       <input id="exDate" type="date" title="记录日期（可改，用于补记过去）">
        <select id="exType"><option>跑步</option><option>爬坡</option><option>瑜伽</option><option>力量训练</option><option>骑行</option><option>游泳</option><option>跳绳</option><option>跳舞</option><option>其他</option></select>
        <input id="exMin" type="number" min="1" placeholder="时长(分钟)" style="max-width:140px">
        <button class="btn" onclick="exAdd()">＋ 记录</button>
@@ -1935,11 +1971,15 @@
 
 
 
+
         listHtml}</ul>
      <div class="reset-zone"><button class="btn soft" onclick="resetToday('exercise')">🧹 重置今日</button></div>
    </div>`
 
         ;
+        const exDateEl = document.getElementById('exDate');
+        if (exDateEl)
+            exDateEl.value = todayKey();
     }
     function exAdd() {
         const type = $('#exType').value;
@@ -1948,13 +1988,14 @@
             toast('时长要大于0哦');
             return;
         }
+        const date = $('#exDate').value || todayKey();
         state.lists.exerciseLog = state.lists.exerciseLog || [];
         state.lists.exerciseLog.unshift({
             id: uid(),
             type,
             min,
-            date: todayKey(),
-            ts: Date.now()
+            date,
+            ts: Date.parse(date + 'T00:00') || Date.now()
         });
         state.total.exerciseMin += min;
         $('#exMin').value = '';
@@ -2281,7 +2322,12 @@
         const stageBtns = KR_STAGES.map(s => `<button class="stage-btn ${s === stage ? 'on' : ''}" onclick="setStage('${s}')">${s.startsWith('TOPIK') ? '📄 ' : s === '发音课' ? '🔤 ' : '✨ '}${s}</button>`).join('');
         const stageProg = KR_STAGES.map(s => `<b>${s}</b>：上课 ${state.total.koreanByStage[s] || 0} 节 · 作业 ${state.total.koreanHWByStage[s] || 0} 项`).join('　｜　');
         const classLog = classLogAll.length ? classLogAll.map(c => `<li class="item"><span class="txt">📖 ${esc(c.note || '韩语课')}<span class="stage-tag">${esc(c.stage || '')}</span><br><span class="sub">📅 ${esc(c.date)}${c.time ? ' · ' + esc(c.time) : ''}</span></span><button class="del" onclick="krDelClass('${c.id}')">✕</button></li>`).join('') : `<div class="empty">还没有上课记录，去打卡第一节课吧 🇰🇷</div>`;
-        const hwList = hw.map(x => `<li class="item"><div class="chk ${x.done ? 'done' : ''}" onclick="krHWToggle('${x.id}')">${x.done ? '✓' : ''}</div><span class="txt ${x.done ? 'done-txt' : ''}">${esc(x.text)}<span class="stage-tag">${esc(x.stage || '')}</span></span><button class="del" onclick="krHWDel('${x.id}')">✕</button></li>`).join('') || `<div class="empty">还没有作业，加一项试试 📝</div>`;
+        const classSection = classLogAll.length ? `<details class="fold" open><summary>📖 上课记录（共 ${classLogAll.length} 节）▾</summary><ul class="item-list">${classLog}</ul></details>` : `<ul class="item-list">${classLog}</ul>`;
+        const hwPending = hw.filter(x => !x.done);
+        const hwDoneList = hw.filter(x => x.done);
+        const hwPendingHtml = hwPending.length ? hwPending.map(x => `<li class="item"><div class="chk" onclick="krHWToggle('${x.id}')">${x.done ? '✓' : ''}</div><span class="txt">${esc(x.text)}<span class="stage-tag">${esc(x.stage || '')}</span></span><button class="del" onclick="krHWDel('${x.id}')">✕</button></li>`).join('') : `<div class="empty">还没有待完成作业，加一项试试 📝</div>`;
+        const hwDoneHtml = hwDoneList.length ? hwDoneList.map(x => `<li class="item"><div class="chk done" onclick="krHWToggle('${x.id}')">✓</div><span class="txt done-txt">${esc(x.text)}<span class="stage-tag">${esc(x.stage || '')}</span></span><button class="del" onclick="krHWDel('${x.id}')">✕</button></li>`).join('') : '';
+        const hwDoneDetails = hwDoneList.length ? `<details class="fold"><summary>✅ 已完成作业（${hwDoneList.length} 项）▾</summary><ul class="item-list">${hwDoneHtml}</ul></details>` : '';
         $('#view-korean').innerHTML = `
    <div class="card">
      <h2>🇰🇷 韩语学习 <span class="tag">课程模式 · 上课 + 作业</span></h2>
@@ -2307,18 +2353,19 @@
        <button class="btn" onclick="krClass()">✓ 上课打卡</button>
      </div>
      <p class="hint">📅 每节课都按日期记下来，下面的记录长期保存，随时回看几号上了什么课～</p>
-     <ul class="item-list">${
+     ${
 
 
 
 
-        classLog}</ul>
+        classSection}
 
      <h2 style="font-size:17px;margin-top:10px">📝 作业清单 <span class="tag">归属「${
         stage}」</span></h2>
      <div class="add-row"><input id="krHW" placeholder="今天要完成的作业…" onkeydown="if(event.key==='Enter')krHWAdd()"><button class="btn" onclick="krHWAdd()">＋ 添加</button></div>
      <ul class="item-list">${
-        hwList}</ul>
+        hwPendingHtml}</ul>
+     ${hwDoneDetails}
 
      <div class="reset-zone"><button class="btn soft" onclick="resetToday('korean')">🧹 重置今日(上课记录)</button></div>
    </div>`
